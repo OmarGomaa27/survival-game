@@ -12,3 +12,7 @@ __pycache__/
 # OS junk
 .DS_Store
 Thumbs.db
+
+# Training outputs 
+reward_history.json
+run_stats.json
