@@ -1082,7 +1082,7 @@ def run_tick(agent, weapons, enemies, gems,
 # ---------------------------------------------------------------------------
 # Headless fast training
 # ---------------------------------------------------------------------------
-def run_fast_training(rl, reward_history, start_episode):
+def run_fast_training(rl, weapon_rl, reward_history, start_episode):
     tracker = RunTracker()
     episode = start_episode
     print(f"\n[FAST] Starting training from episode {episode} ...")
@@ -1118,9 +1118,13 @@ def run_fast_training(rl, reward_history, start_episode):
             if level_up:
                 choices = generate_level_up_choices(weapons)
                 if choices:
-                    idx, weights = weighted_weapon_choice(choices, weapons, tracker)
+                    w_state = weapon_rl.get_state(agent, enemies, weapons, wave, choices)
+                    idx = weapon_rl.choose(w_state, len(choices))
+                    weapon_rl.record_choice(w_state, idx)
+                    # Record Q-values as weights for diagnostics
+                    q_weights = [weapon_rl.get_q(w_state, i) for i in range(len(choices))]
                     if ep_stats:
-                        ep_stats.weapon_choices.append((choices, weights, idx))
+                        ep_stats.weapon_choices.append((choices, q_weights, idx))
                     apply_choice(choices[idx], weapons)
 
             ep_stats.ticks        = tick_count
@@ -1138,6 +1142,10 @@ def run_fast_training(rl, reward_history, start_episode):
                     won = boss_win or (tick_count >= MAX_TICKS)
                     if boss_win:
                         ep_stats.boss_win = True
+
+                    # Update weapon Q-agent with episode outcome
+                    weapon_rl.update(episode_reward)
+
                     tracker.end_episode(won=won)
                     break
 
@@ -1211,6 +1219,7 @@ def main():
 
     ACTIONS = [(0, -1), (0, 1), (-1, 0), (1, 0), (0, 0)]
     rl      = QLearningAgent(actions=ACTIONS, game_map=MAP)
+    weapon_rl = WeaponChoiceAgent()
 
     episode        = 0
     episode_reward = 0.0
@@ -1253,7 +1262,7 @@ def main():
                     FAST_MODE = not FAST_MODE
                     if FAST_MODE and TRAINING:
                         episode, last_tracker = run_fast_training(
-                            rl, reward_history, episode)
+                            rl, weapon_rl, reward_history, episode)
                         FAST_MODE     = False
                         training_done = True
                 if not TRAINING:
@@ -1304,9 +1313,12 @@ def main():
             if level_up:
                 choices = generate_level_up_choices(weapons)
                 if choices:
-                    idx, weights = weighted_weapon_choice(choices, weapons, tracker)
+                    w_state = weapon_rl.get_state(agent, enemies, weapons, wave, choices)
+                    idx = weapon_rl.choose(w_state, len(choices))
+                    weapon_rl.record_choice(w_state, idx)
+                    q_weights = [weapon_rl.get_q(w_state, i) for i in range(len(choices))]
                     if ep_stats:
-                        ep_stats.weapon_choices.append((choices, weights, idx))
+                        ep_stats.weapon_choices.append((choices, q_weights, idx))
                     apply_choice(choices[idx], weapons)
 
             ep_stats.ticks        = tick_count
@@ -1378,6 +1390,10 @@ def main():
             won = boss_win or (tick_count >= MAX_TICKS)
             if boss_win and ep_stats:
                 ep_stats.boss_win = True
+
+            # Update weapon Q-agent with episode outcome
+            weapon_rl.update(episode_reward)
+
             tracker.end_episode(won=won)
             last_tracker = tracker
 
