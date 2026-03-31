@@ -1,7 +1,8 @@
 import random
 import math
 
-# weapon key → integer id for state encoding
+# Weapon key -> integer id for state encoding
+# Shield (id 4) is disabled but reserved for potential re-addition
 WEAPON_IDS = {"wand": 0, "axe": 1, "whip": 2, "books": 3, "shield": 4}
 
 
@@ -41,7 +42,7 @@ class QLearningAgent:
         self.epsilon = max(self.epsilon_min,
                            self.epsilon * self.epsilon_decay)
 
-    def get_state(self, agent, enemies, gems, weapons, xp):
+    def get_state(self, agent, enemies, gems):
         """
         State with directional wall awareness and distance buckets.
 
@@ -53,7 +54,7 @@ class QLearningAgent:
            wall_blocks_gem,     # 0=clear 1=wall blocks gem-x 2=blocks gem-y 3=both
            hp_bucket)           # 0=critical(≤25) 1=low(≤50) 2=ok
         """
-        # ── Nearest enemy ─────────────────────────────────────
+        # -- Nearest enemy -----------------------------------------------------
         nearest_enemy, best_e = None, float('inf')
         for e in enemies:
             d = ((e.x - agent.x)**2 + (e.y - agent.y)**2) ** 0.5
@@ -75,7 +76,7 @@ class QLearningAgent:
             ex = ey = 0
             enemy_dist = 3        # far / none
 
-        # ── Nearest gem ───────────────────────────────────────
+        # -- Nearest gem -------------------------------------------------------
         nearest_gem, best_g = None, float('inf')
         for g in gems:
             d = abs(g[0] - agent.x) + abs(g[1] - agent.y)

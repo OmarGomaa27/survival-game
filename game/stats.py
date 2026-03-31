@@ -6,13 +6,13 @@ class EpisodeStats:
         self.player_level = 1
         self.won          = False   # survived to MAX_TICKS
 
-        # per weapon key → damage dealt this episode
-        self.weapon_damage  = {}   # key → total damage
-        self.weapon_level   = {}   # key → final level at episode end
+        # per weapon key -> damage dealt this episode
+        self.weapon_damage  = {}   # key -> total damage
+        self.weapon_level   = {}   # key -> final level at episode end
         self.weapon_present = set()
-        self.hp_saved       = {}   # key → total HP saved this episode
+        self.hp_saved       = {}   # key -> total HP saved this episode
 
-        # ── New diagnostics ───────────────────────────────────
+        # Diagnostics
         self.gems_collected   = 0
         self.damage_taken     = 0
         self.hits_taken       = 0
@@ -78,16 +78,15 @@ class RunTracker:
         self.boss_kills_total = 0
         self.max_player_level = 1
 
-        # per weapon key
-        self._weapon_episodes    = {}
-        self._weapon_wins        = {}
-        self._weapon_level_sum   = {}
-        self._weapon_dps_sum     = {}
-        self._weapon_dps_max     = {}
-        self._weapon_hp_saved_sum = {}
+        self._weapon_episodes    = {}   # key -> episodes appeared in
+        self._weapon_wins        = {}   # key -> wins when present
+        self._weapon_level_sum   = {}   # key -> sum of final levels
+        self._weapon_dps_sum     = {}   # key -> sum of dps values
+        self._weapon_dps_max     = {}   # key -> max dps ever seen
+        self._weapon_hp_saved_sum = {}  # key -> total HP saved across episodes
         self._player_level_sum   = 0
 
-        # ── New diagnostic accumulators ───────────────────────
+        # Diagnostic accumulators
         self._ticks_sum           = 0
         self._gems_sum            = 0
         self._damage_taken_sum    = 0
@@ -97,14 +96,14 @@ class RunTracker:
         self._moves_sum           = 0
         self._tiles_revealed_sum  = 0
         self._boss_wins           = 0
-        self._gems_at_death_hist  = {}  # gems_collected → count
+        self._gems_at_death_hist  = {}  # gems_collected -> count
 
-        # weapon choice diagnostics
+        # Weapon choice diagnostics
         self._total_levelups      = 0
-        self._choice_picks        = {}  # (kind, key) → times picked
-        self._choice_offered      = {}  # (kind, key) → times offered
-        self._choice_weights_sum  = {}  # key → sum of weights when offered
-        self._choice_weights_n    = {}  # key → count of times offered
+        self._choice_picks        = {}  # (kind, key) -> times picked
+        self._choice_offered      = {}  # (kind, key) -> times offered
+        self._choice_weights_sum  = {}  # key -> sum of weights when offered
+        self._choice_weights_n    = {}  # key -> count of times offered
 
         self._current = None
 
@@ -169,7 +168,7 @@ class RunTracker:
 
         self._current = None
 
-    # ── Aggregated getters ────────────────────────────────────
+    # -- Aggregated getters -------------------------------------------------
     def win_rate(self):
         return self.wins / max(self.episodes, 1)
 

@@ -1321,7 +1321,7 @@ def run_fast_training(rl, weapon_rl, reward_history, start_episode):
         episode_reward = 0.0
         ep_stats       = tracker.start_episode()
 
-        state  = rl.get_state(agent, enemies, gems, weapons, xp)
+        state  = rl.get_state(agent, enemies, gems)
         action = rl.choose_action(state)
         accum_reward = 0.0
 
@@ -1360,7 +1360,7 @@ def run_fast_training(rl, weapon_rl, reward_history, start_episode):
             # Q-update only on actual movement ticks or episode end
             moved = (agent_move_timer == 0)
             if moved or done:
-                next_state = rl.get_state(agent, enemies, gems, weapons, xp)
+                next_state = rl.get_state(agent, enemies, gems)
                 rl.update(state, action, accum_reward, next_state)
                 accum_reward = 0.0
 
@@ -1470,8 +1470,7 @@ def main():
     # Player input direction (for manual mode)
     player_action = (0, 0)
 
-    # Persistent RL decision state across frames
-    rl_state  = rl.get_state(agent, enemies, gems, weapons, xp)
+    rl_state  = rl.get_state(agent, enemies, gems)
     rl_action = rl.choose_action(rl_state)
     rl_accum  = 0.0
 
@@ -1554,7 +1553,7 @@ def main():
 
             moved = (agent_move_timer == 0)
             if moved or episode_done:
-                next_state = rl.get_state(agent, enemies, gems, weapons, xp)
+                next_state = rl.get_state(agent, enemies, gems)
                 rl.update(rl_state, rl_action, rl_accum, next_state)
                 rl_accum  = 0.0
                 rl_state  = next_state
@@ -1662,7 +1661,7 @@ def main():
             ep_stats = tracker.start_episode()
             active_effects.clear()
 
-            rl_state  = rl.get_state(agent, enemies, gems, weapons, xp)
+            rl_state  = rl.get_state(agent, enemies, gems)
             rl_action = rl.choose_action(rl_state)
             rl_accum  = 0.0
 
