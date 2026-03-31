@@ -1043,14 +1043,26 @@ def run_tick(agent, weapons, enemies, gems,
     if new_tiles > 0:
         reward += 0.3 * new_tiles
 
-    # Gem collection
+    # Gem approach: only when gem is visible (within FOG_RADIUS)
+    # This teaches "when you see a gem, go get it" without
+    # punishing long-distance wall navigation
+    if gems and agent_move_timer == 0:
+        nearest_gem_dist = min(
+            abs(agent.x - g[0]) + abs(agent.y - g[1]) for g in gems)
+        if nearest_gem_dist <= FOG_RADIUS:
+            if curr_gem_dist < prev_gem_dist:
+                reward += 5.0
+            elif curr_gem_dist > prev_gem_dist:
+                reward -= 2.0
+
+    # Gem collection -- boosted to dominate damage signal
     gem_collected = xp - prev_xp
     if gem_collected > 0:
-        reward += 15.0 * gem_collected
+        reward += 30.0 * gem_collected
 
     # Level-up bonus
     if level_up:
-        reward += 30.0
+        reward += 50.0
 
     # Kill reward (small -- agent does not directly control weapons)
     reward += tick_nk * 1.0
@@ -1058,7 +1070,7 @@ def run_tick(agent, weapons, enemies, gems,
     # Damage penalty (scaled by amount)
     hp_lost = prev_hp - agent.hp
     if hp_lost > 0:
-        reward -= 3.0 * (hp_lost / 5.0)
+        reward -= 2.0 * (hp_lost / 5.0)
 
     # Terminal rewards
     if boss_win:
@@ -1279,7 +1291,7 @@ def main():
                     FAST_MODE = not FAST_MODE
                     if FAST_MODE and TRAINING:
                         episode, last_tracker = run_fast_training(
-                            rl, reward_history, episode)
+                            rl, weapon_rl, reward_history, episode)
                         FAST_MODE     = False
                         training_done = True
 
