@@ -14,7 +14,7 @@ def sign(n):
 
 
 class Enemy:
-    def __init__(self, x, y, hp=20, damage=5, speed=1,
+    def __init__(self, x, y, hp=20, damage=3, speed=2,
                  color=RED, symbol="E"):
         self.x            = x
         self.y            = y
@@ -29,6 +29,7 @@ class Enemy:
         self.is_boss      = False
 
     def step_toward_agent(self, agent, game_map):
+        """Move toward the agent. Enemies can walk through walls."""
         self._move_timer += 1
         if self._move_timer < self.speed:
             return
@@ -46,7 +47,7 @@ class Enemy:
             nx, ny = self.x + mdx, self.y + mdy
             rows = len(game_map)
             cols = len(game_map[0])
-            if 0 <= nx < cols and 0 <= ny < rows and game_map[ny][nx] == 0:
+            if 0 <= nx < cols and 0 <= ny < rows:
                 self.x, self.y = nx, ny
                 break
 
