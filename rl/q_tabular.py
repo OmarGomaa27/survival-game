@@ -142,12 +142,11 @@ class WeaponChoiceAgent:
         self.epsilon       = epsilon
         self.epsilon_decay = epsilon_decay
         self.epsilon_min   = epsilon_min
-        self.q_table       = {}   # state -> {0: v, 1: v, 2: v}
+        self.q_table       = {}
         self.actions       = [0, 1, 2]
 
-        # pending data needed for the delayed update
-        self._pending_state  = None
-        self._pending_action = None
+        # Store ALL pending choices per episode (not just the last one)
+        self._pending_choices = []  # list of (state, action)
 
     # ── Q helpers ─────────────────────────────────────────────
     def get_q(self, state, action):
@@ -199,37 +198,32 @@ class WeaponChoiceAgent:
         return max(qs, key=qs.get)
 
     def record_choice(self, state, action):
-        """Call right after making a weapon choice."""
-        self._pending_state  = state
-        self._pending_action = action
+        """Call right after making a weapon choice. Stores ALL choices
+        made during an episode, not just the last one."""
+        self._pending_choices.append((state, action))
 
     def update(self, reward, next_state=None):
-        """
-        Call after the reward for the weapon choice is observed
-        (typically at end of episode or after a fixed number of ticks).
-        If next_state is None, treat as terminal.
-        """
-        if self._pending_state is None:
+        """Update Q-values for ALL weapon choices made this episode.
+        Each choice receives the same episode reward signal, since
+        we cannot attribute reward to individual weapon picks."""
+        if not self._pending_choices:
             return
 
-        s = self._pending_state
-        a = self._pending_action
+        for s, a in self._pending_choices:
+            current_q = self.get_q(s, a)
+            if next_state is not None:
+                max_next = max(self.get_q(next_state, x) for x in self.actions)
+            else:
+                max_next = 0.0
 
-        current_q = self.get_q(s, a)
-        if next_state is not None:
-            max_next = max(self.get_q(next_state, x) for x in self.actions)
-        else:
-            max_next = 0.0
-
-        new_q = current_q + self.alpha * (
-                    reward + self.gamma * max_next - current_q)
-        self._set_q(s, a, new_q)
+            new_q = current_q + self.alpha * (
+                        reward + self.gamma * max_next - current_q)
+            self._set_q(s, a, new_q)
 
         self.epsilon = max(self.epsilon_min,
                            self.epsilon * self.epsilon_decay)
 
-        self._pending_state  = None
-        self._pending_action = None
+        self._pending_choices.clear()
 
     def has_pending(self):
-        return self._pending_state is not None
+        return len(self._pending_choices) > 0

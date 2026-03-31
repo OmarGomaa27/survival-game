@@ -16,3 +16,5 @@ Thumbs.db
 # Training outputs 
 reward_history.json
 run_stats.json
+results_screen.png
+training_results.csv

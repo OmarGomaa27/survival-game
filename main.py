@@ -30,13 +30,12 @@ TILE              = 24
 FPS               = 8
 FOG_RADIUS        = 3
 MAX_EPISODES      = 20000
-MAX_TICKS         = 1000
+MAX_TICKS         = 3840    # 8 minutes at 8 FPS
 AGENT_MOVE_EVERY  = 3
-BOSS_WAVES        = {3, 6, 9, 12, 15}
+BOSS_SPAWN_TICK   = 2880   # 6 minutes at 8 FPS
 MAX_WEAPON_SLOTS  = 3
 BURST_INTER_DELAY = 2
 
-TRAINING  = True
 FAST_MODE = False
 
 # Colors
@@ -133,6 +132,47 @@ def update_seen_tiles(agent, seen_tiles):
     return new_count
 
 # ---------------------------------------------------------------------------
+# Visual effects (weapon flash indicators)
+# ---------------------------------------------------------------------------
+# Each effect: {"x": col, "y": row, "color": tuple, "frames": int, "style": str}
+active_effects = []
+
+def add_effect(x, y, color, frames=3, style="fill"):
+    """Add a temporary visual effect at a tile position.
+    Skipped during fast training to avoid memory buildup."""
+    if FAST_MODE:
+        return
+    active_effects.append({"x": x, "y": y, "color": color,
+                           "frames": frames, "style": style})
+
+def update_effects():
+    """Tick down effect timers and remove expired ones."""
+    for eff in active_effects:
+        eff["frames"] -= 1
+    active_effects[:] = [e for e in active_effects if e["frames"] > 0]
+
+def draw_effects(surface):
+    """Render active visual effects."""
+    for eff in active_effects:
+        x, y = eff["x"], eff["y"]
+        if not (0 <= x < COLS and 0 <= y < ROWS):
+            continue
+        rect = pygame.Rect(x * TILE + 2, y * TILE + 2, TILE - 4, TILE - 4)
+        if eff["style"] == "fill":
+            s = pygame.Surface((TILE - 4, TILE - 4), pygame.SRCALPHA)
+            s.fill((*eff["color"], 160))
+            surface.blit(s, (x * TILE + 2, y * TILE + 2))
+        elif eff["style"] == "ring":
+            pygame.draw.rect(surface, eff["color"], rect, 2, border_radius=4)
+        elif eff["style"] == "cross":
+            cx = x * TILE + TILE // 2
+            cy = y * TILE + TILE // 2
+            pygame.draw.line(surface, eff["color"],
+                             (cx - 6, cy - 6), (cx + 6, cy + 6), 2)
+            pygame.draw.line(surface, eff["color"],
+                             (cx + 6, cy - 6), (cx - 6, cy + 6), 2)
+
+# ---------------------------------------------------------------------------
 # Gem helpers
 # ---------------------------------------------------------------------------
 def spawn_gems(n, cols, rows, game_map, exclude_positions=None):
@@ -211,6 +251,8 @@ def handle_wand(agent, weapon, enemies, gems, tick_count,
                 is_boss = nearest.symbol == "B"
                 dmg     = weapon["damage"]
                 nearest.take_damage(dmg)
+                # Wand hit flash (white cross on target)
+                add_effect(nearest.x, nearest.y, (255, 255, 255), frames=2, style="cross")
                 if ep_stats:
                     ep_stats.record_damage(weapon_key, dmg)
                 if not nearest.alive:
@@ -226,20 +268,25 @@ def handle_wand(agent, weapon, enemies, gems, tick_count,
     return nk, bk
 
 def spawn_axe_volley(agent, weapon):
-    """Create arc projectiles that travel upward then fall with gravity."""
+    """Create arc projectiles that arc outward and fall back down
+    past the agent, like a thrown boomerang."""
     n   = weapon.get("projectiles", 1)
     dmg = weapon["damage"]
     if n == 1:
-        vx_vals = [0.0]
+        vx_vals = [0.5]
     else:
-        spread  = 0.5 * (n - 1)
-        vx_vals = [-spread / 2 + spread / (n - 1) * i for i in range(n)]
+        # Spread axes left and right
+        vx_vals = []
+        for i in range(n):
+            side = -1 if i % 2 == 0 else 1
+            spread = 0.3 + (i // 2) * 0.3
+            vx_vals.append(side * spread)
     projs = []
     for vx in vx_vals:
         projs.append({
             "type": "axe", "x": float(agent.x), "y": float(agent.y),
-            "vx": vx, "vy": -1.8, "gravity": 0.18, "damage": dmg,
-            "start_y": agent.y, "hit_ids": set(), "alive": True,
+            "vx": vx, "vy": -1.5, "gravity": 0.12, "damage": dmg,
+            "hit_ids": set(), "alive": True,
         })
     return projs
 
@@ -250,7 +297,8 @@ def handle_axe(agent, weapon, active_projectiles):
         active_projectiles.extend(spawn_axe_volley(agent, weapon))
 
 def update_projectiles(active_projectiles, enemies, gems, ep_stats=None):
-    """Advance all active projectiles, check collisions, remove dead ones."""
+    """Advance all active projectiles, check collisions, remove dead ones.
+    Projectiles pass through walls since enemies can walk through them."""
     nk = bk = 0
     for proj in active_projectiles:
         if not proj["alive"]:
@@ -260,13 +308,8 @@ def update_projectiles(active_projectiles, enemies, gems, ep_stats=None):
         proj["vy"] += proj["gravity"]
         gx = int(round(proj["x"]))
         gy = int(round(proj["y"]))
+        # Die at map boundaries only
         if not (0 <= gx < COLS and 0 <= gy < ROWS):
-            proj["alive"] = False
-            continue
-        if MAP[gy][gx] == 1:
-            proj["alive"] = False
-            continue
-        if proj["vy"] > 0 and proj["y"] >= proj["start_y"] + 0.5:
             proj["alive"] = False
             continue
         for e in list(enemies):
@@ -308,6 +351,17 @@ def handle_whip(agent, weapon, enemies, gems,
             weapon["burst_timer"]     = 0
             weapon["burst_remaining"] -= 1
             dx, dy = agent.facing
+            # Whip sweep visual (show attack area)
+            for dist in range(1, weapon["range"] + 1):
+                sweep_x = agent.x + dx * dist
+                sweep_y = agent.y + dy * dist
+                add_effect(sweep_x, sweep_y, (255, 60, 60), frames=2, style="fill")
+                if dx != 0:
+                    add_effect(sweep_x, agent.y - 1, (255, 60, 60), frames=2, style="fill")
+                    add_effect(sweep_x, agent.y + 1, (255, 60, 60), frames=2, style="fill")
+                if dy != 0:
+                    add_effect(agent.x - 1, sweep_y, (255, 60, 60), frames=2, style="fill")
+                    add_effect(agent.x + 1, sweep_y, (255, 60, 60), frames=2, style="fill")
             for e in list(enemies):
                 rx, ry   = e.x - agent.x, e.y - agent.y
                 in_front = (
@@ -318,6 +372,8 @@ def handle_whip(agent, weapon, enemies, gems,
                     is_boss = e.symbol == "B"
                     dmg     = weapon["damage"]
                     e.take_damage(dmg)
+                    # Whip strike flash (red ring on target)
+                    add_effect(e.x, e.y, (255, 80, 80), frames=3, style="ring")
                     if ep_stats:
                         ep_stats.record_damage(weapon_key, dmg)
                     if not e.alive:
@@ -348,6 +404,8 @@ def handle_books(agent, weapon, enemies, gems,
                 is_boss = e.symbol == "B"
                 dmg     = weapon["damage"]
                 e.take_damage(dmg)
+                # Book hit flash (blue cross on target)
+                add_effect(e.x, e.y, (100, 180, 255), frames=2, style="cross")
                 if ep_stats:
                     ep_stats.record_damage(weapon_key, dmg)
                 if not e.alive:
@@ -582,32 +640,58 @@ def draw_projectiles(surface, active_projectiles):
 
 def draw_hud(surface, agent, wave, kills, xp, xp_level,
              weapons, episode, episode_reward, epsilon,
-             fast_mode, boss_alive):
+             fast_mode, boss_alive, mode):
     sw = surface.get_width()
-    font        = pygame.font.SysFont(None, 26)
-    weapon_text = "  ".join(
-        f"{w['name']} Lv{w['level']}" for w in weapons.values())
-    mode_label  = "FAST" if fast_mode else ("TRAIN" if TRAINING else "MANUAL")
-    mode_color  = ORANGE if fast_mode else \
-                  ((255, 180, 0) if TRAINING else (100, 255, 100))
-    left_lines = [
-        (f"HP: {agent.hp}",             WHITE),
-        (f"Wave: {wave}",               WHITE),
-        (f"Kills: {kills}",             WHITE),
-        (f"XP: {xp}  (Lv {xp_level})", WHITE),
-        (weapon_text,                   WHITE),
-    ]
-    right_lines = [
-        (f"MODE: {mode_label}",              mode_color),
-        (f"Episode: {episode}",              WHITE),
-        (f"Ep Reward: {episode_reward:.1f}", WHITE),
-        (f"Epsilon:   {epsilon:.3f}",        WHITE),
-    ]
-    for i, (text, color) in enumerate(left_lines):
-        surface.blit(font.render(text, True, color), (8, 8 + i * 22))
-    for i, (text, color) in enumerate(right_lines):
-        s = font.render(text, True, color)
-        surface.blit(s, (sw - s.get_width() - 8, 8 + i * 22))
+    font     = pygame.font.SysFont(None, 24)
+    font_sm  = pygame.font.SysFont(None, 20)
+
+    y = 8
+
+    # -- HP bar --
+    hp_label = font.render(f"HP: {agent.hp}/100", True, WHITE)
+    surface.blit(hp_label, (8, y))
+    bar_x, bar_w, bar_h = 120, 150, 16
+    hp_ratio = max(agent.hp / 100, 0)
+    hp_color = GREEN if hp_ratio > 0.5 else (YELLOW if hp_ratio > 0.25 else RED)
+    pygame.draw.rect(surface, (40, 40, 40), (bar_x, y + 2, bar_w, bar_h))
+    pygame.draw.rect(surface, hp_color, (bar_x, y + 2, int(bar_w * hp_ratio), bar_h))
+    pygame.draw.rect(surface, WHITE, (bar_x, y + 2, bar_w, bar_h), 1)
+    y += 22
+
+    # -- XP bar (fills to 5, resets on level up) --
+    xp_in_level = xp % 5
+    xp_ratio = xp_in_level / 5.0
+    lv_label = font.render(f"Lv {xp_level}  ({xp_in_level}/5 XP)", True, WHITE)
+    surface.blit(lv_label, (8, y))
+    pygame.draw.rect(surface, (40, 40, 40), (bar_x + 40, y + 2, bar_w - 40, bar_h))
+    pygame.draw.rect(surface, CYAN, (bar_x + 40, y + 2, int((bar_w - 40) * xp_ratio), bar_h))
+    pygame.draw.rect(surface, WHITE, (bar_x + 40, y + 2, bar_w - 40, bar_h), 1)
+    y += 22
+
+    # -- Wave / Kills --
+    surface.blit(font.render(f"Wave: {wave}   Kills: {kills}", True, WHITE), (8, y))
+    y += 22
+
+    # -- Weapon list --
+    surface.blit(font.render("Weapons:", True, GOLD), (8, y))
+    y += 20
+    for key, w in weapons.items():
+        w_color = CYAN if w.get("type") == "target" else WHITE
+        surface.blit(font_sm.render(f"  {w['name']} Lv{w['level']}", True, w_color), (8, y))
+        y += 18
+
+    # -- Right side: episode info (agent mode only) --
+    if mode == "agent":
+        right_lines = [
+            (f"Episode: {episode}",              WHITE),
+            (f"Ep Reward: {episode_reward:.1f}", WHITE),
+            (f"Epsilon:   {epsilon:.3f}",        WHITE),
+        ]
+        for i, (text, color) in enumerate(right_lines):
+            s = font.render(text, True, color)
+            surface.blit(s, (sw - s.get_width() - 8, 8 + i * 22))
+
+    # -- Boss warning --
     if boss_alive:
         wf = pygame.font.SysFont(None, 36)
         bw = wf.render("!! BOSS ACTIVE !!", True, PURPLE)
@@ -673,7 +757,6 @@ def render_results_surface(reward_history, sw, tracker=None):
             (f"Win Rate:       {tracker.win_rate()*100:.1f}%",
              GREEN if tracker.win_rate() > 0.1 else WHITE),
             (f"Total Wins:     {tracker.wins}",              WHITE),
-            (f"Boss Wins:      {tracker.boss_win_count()}",  PURPLE),
             (f"Boss Kills:     {tracker.boss_kills_total}",  PURPLE),
             (f"Max Plyr Level: {tracker.max_player_level}",  CYAN),
             (f"Avg Plyr Level: {tracker.avg_player_level():.1f}", CYAN),
@@ -695,7 +778,7 @@ def render_results_surface(reward_history, sw, tracker=None):
         explore_pct = tracker.avg_tiles_revealed() / max(TOTAL_WALKABLE, 1) * 100
 
         diag_left = [
-            (f"Avg Ticks Survived: {tracker.avg_ticks():.0f}",     WHITE),
+            (f"Avg Survived:       {tracker.avg_ticks()/FPS:.1f}s ({tracker.avg_ticks():.0f} ticks)", WHITE),
             (f"Avg Gems Collected: {tracker.avg_gems():.1f}",      WHITE),
             (f"Reach 5 Gems:       {pct5:.1f}%",
              GREEN if pct5 > 10 else WHITE),
@@ -718,18 +801,19 @@ def render_results_surface(reward_history, sw, tracker=None):
         # Gem histogram
         hist = tracker.gems_at_death_histogram()
         if hist:
-            surf.blit(fxs.render("Gems collected distribution:", True, GREY), (12, dy))
-            dy += 16
+            surf.blit(fs.render("Gems Collected Per Episode:", True, GOLD), (12, dy))
+            dy += 18
             max_count = max(c for _, c in hist)
             bar_area  = sw - 24
             for g_count, count in hist[:12]:
+                pct     = count / max(total, 1) * 100
                 pct_bar = count / max_count
-                bar_w   = max(int(pct_bar * (bar_area - 80)), 1)
-                label   = fxs.render(f"{g_count:2d}:", True, CYAN)
+                bar_w   = max(int(pct_bar * (bar_area - 180)), 1)
+                label   = fxs.render(f"{g_count:2d} gems:", True, CYAN)
                 surf.blit(label, (12, dy))
-                pygame.draw.rect(surf, CYAN, (40, dy + 2, bar_w, 12))
-                ct_label = fxs.render(f"{count}", True, GREY)
-                surf.blit(ct_label, (44 + bar_w, dy))
+                pygame.draw.rect(surf, CYAN, (70, dy + 2, bar_w, 12))
+                ct_label = fxs.render(f"{count} ({pct:.1f}%)", True, GREY)
+                surf.blit(ct_label, (74 + bar_w, dy))
                 dy += 16
             dy += 4
 
@@ -746,7 +830,7 @@ def render_results_surface(reward_history, sw, tracker=None):
         ty   = dy
         pygame.draw.line(surf, GREY, (8, ty - 4), (sw - 8, ty - 4), 1)
         headers  = ["Weapon", "Apps", "DPS", "Max DPS",
-                    "Win%", "Avg Lv", "HP Saved"]
+                    "Win%", "Avg Lv"]
         n_cols   = len(headers)
         col_pad  = 12
         col_span = (sw - 2 * col_pad) / n_cols
@@ -764,7 +848,6 @@ def render_results_surface(reward_history, sw, tracker=None):
                 f"{tracker.weapon_max_dps(key):.2f}",
                 f"{tracker.weapon_win_rate(key)*100:.1f}%",
                 f"{tracker.weapon_avg_level(key):.1f}",
-                f"{tracker.weapon_avg_hp_saved(key):.1f}",
             ]
             row_color = CYAN if row % 2 == 0 else WHITE
             for cx, v in zip(col_x, vals):
@@ -822,23 +905,55 @@ def render_results_surface(reward_history, sw, tracker=None):
         pygame.draw.rect(surf, GREY,      (cx, cy, cw, ch), 1)
         mn, mx = min(reward_history), max(reward_history)
         rng    = mx - mn if mx != mn else 1
-        pts    = []
+
+        # Rolling average (window = 1% of episodes, min 10)
+        window = max(10, total // 100)
+        smoothed = []
+        running  = 0.0
+        for i, r in enumerate(reward_history):
+            running += r
+            if i >= window:
+                running -= reward_history[i - window]
+            count = min(i + 1, window)
+            smoothed.append(running / count)
+
+        # Raw data points (dim)
+        raw_pts = []
         for i, r in enumerate(reward_history):
             px = cx + int(i / (total - 1) * cw)
             py = cy + ch - int((r - mn) / rng * ch)
-            pts.append((px, py))
-        if len(pts) > 1:
-            pygame.draw.lines(surf, CYAN, False, pts, 1)
+            raw_pts.append((px, py))
+        if len(raw_pts) > 1:
+            pygame.draw.lines(surf, (40, 100, 100), False, raw_pts, 1)
+
+        # Smoothed line (bright)
+        smooth_pts = []
+        for i, r in enumerate(smoothed):
+            px = cx + int(i / (total - 1) * cw)
+            py = cy + ch - int((r - mn) / rng * ch)
+            smooth_pts.append((px, py))
+        if len(smooth_pts) > 1:
+            pygame.draw.lines(surf, CYAN, False, smooth_pts, 2)
+
+        # Labels
         surf.blit(fxs.render("Ep 1", True, GREY), (cx + 2, cy + ch - 14))
         lr = fxs.render(f"Ep {total}", True, GREY)
         surf.blit(lr, (cx + cw - lr.get_width() - 2, cy + ch - 14))
+        surf.blit(fxs.render("Reward per Episode (smoothed)", True, GOLD),
+                  (cx + 4, cy + 4))
+        # Y-axis labels
+        top_label = fxs.render(f"{mx:.0f}", True, GREY)
+        surf.blit(top_label, (cx + 2, cy + 16))
+        bot_label = fxs.render(f"{mn:.0f}", True, GREY)
+        surf.blit(bot_label, (cx + 2, cy + ch - 28))
+
     dy = cy + ch + 8
 
-    hint = fxs.render(
-        "Saved reward_history.json + run_stats.json  --  Scroll Up/Down  --  ESC to quit",
-        True, GREY)
+    hint = fs.render(
+        "[ESC] Quit    [P] Export PNG    [D] Export CSV",
+        True, WHITE)
     surf.blit(hint, (sw // 2 - hint.get_width() // 2, dy))
-    dy += 20
+    dy += 24
 
     # Trim surface to actual content height
     final = pygame.Surface((sw, dy))
@@ -853,6 +968,46 @@ def show_results_screen(screen, reward_history, tracker=None):
     scroll_y     = 0
     max_scroll   = max(0, results_surf.get_height() - SCREEN_H)
     needs_rerender = False
+
+    def export_png():
+        fname = "results_screen.png"
+        pygame.image.save(results_surf, fname)
+        print(f"[EXPORT] Saved screenshot to {fname}")
+
+    def export_csv():
+        if not tracker:
+            return
+        fname = "training_results.csv"
+        import csv
+        with open(fname, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["Metric", "Value"])
+            w.writerow(["Episodes", tracker.episodes])
+            w.writerow(["Wins", tracker.wins])
+            w.writerow(["Win Rate", f"{tracker.win_rate()*100:.1f}%"])
+            w.writerow(["Boss Kills", tracker.boss_kills_total])
+            w.writerow(["Max Player Level", tracker.max_player_level])
+            w.writerow(["Avg Player Level", f"{tracker.avg_player_level():.1f}"])
+            w.writerow(["Avg Ticks Survived", f"{tracker.avg_ticks():.0f}"])
+            w.writerow(["Avg Gems Collected", f"{tracker.avg_gems():.1f}"])
+            w.writerow(["Avg Hits Taken", f"{tracker.avg_hits_taken():.1f}"])
+            w.writerow(["Avg Dmg Taken", f"{tracker.avg_damage_taken():.0f}"])
+            w.writerow(["Gem Approach %", f"{tracker.gem_approach_ratio()*100:.1f}%"])
+            w.writerow(["Avg Map Explored", f"{tracker.avg_tiles_revealed()/max(TOTAL_WALKABLE,1)*100:.0f}%"])
+            w.writerow([])
+            w.writerow(["Weapon", "Apps", "DPS", "Max DPS", "Win%", "Avg Lv"])
+            for key in tracker.all_weapon_keys():
+                w.writerow([key,
+                            tracker.weapon_appearances(key),
+                            f"{tracker.weapon_avg_dps(key):.2f}",
+                            f"{tracker.weapon_max_dps(key):.2f}",
+                            f"{tracker.weapon_win_rate(key)*100:.1f}%",
+                            f"{tracker.weapon_avg_level(key):.1f}"])
+            w.writerow([])
+            w.writerow(["Episode", "Reward"])
+            for i, r in enumerate(reward_history):
+                w.writerow([i + 1, f"{r:.1f}"])
+        print(f"[EXPORT] Saved training data to {fname}")
 
     while True:
         for event in pygame.event.get():
@@ -874,6 +1029,10 @@ def show_results_screen(screen, reward_history, tracker=None):
                     scroll_y = max(0, scroll_y - 30)
                 elif event.key == pygame.K_DOWN:
                     scroll_y = min(max_scroll, scroll_y + 30)
+                elif event.key == pygame.K_p:
+                    export_png()
+                elif event.key == pygame.K_d:
+                    export_csv()
 
         if needs_rerender:
             results_surf = render_results_surface(reward_history, SCREEN_W, tracker)
@@ -893,6 +1052,59 @@ def show_results_screen(screen, reward_history, tracker=None):
                              border_radius=3)
 
         pygame.display.flip()
+
+# ---------------------------------------------------------------------------
+# Mode selection screen
+# ---------------------------------------------------------------------------
+def run_mode_select(screen):
+    """Show mode selection at startup. Returns 'agent' or 'manual'."""
+    sw, sh = screen.get_size()
+    ft = pygame.font.SysFont(None, 48)
+    fm = pygame.font.SysFont(None, 30)
+    fs = pygame.font.SysFont(None, 22)
+
+    while True:
+        screen.fill((10, 10, 20))
+        title = ft.render("Vampire Survivors RL", True, GOLD)
+        screen.blit(title, (sw // 2 - title.get_width() // 2, sh // 4))
+
+        sub = fm.render("Select Mode:", True, WHITE)
+        screen.blit(sub, (sw // 2 - sub.get_width() // 2, sh // 4 + 60))
+
+        # Agent mode button
+        agent_rect = pygame.Rect(sw // 2 - 160, sh // 2, 140, 50)
+        pygame.draw.rect(screen, (20, 80, 20), agent_rect, border_radius=8)
+        pygame.draw.rect(screen, GREEN, agent_rect, 2, border_radius=8)
+        a_label = fm.render("[1] Agent", True, GREEN)
+        screen.blit(a_label, (agent_rect.centerx - a_label.get_width() // 2,
+                               agent_rect.centery - a_label.get_height() // 2))
+
+        # Manual mode button
+        manual_rect = pygame.Rect(sw // 2 + 20, sh // 2, 140, 50)
+        pygame.draw.rect(screen, (20, 20, 80), manual_rect, border_radius=8)
+        pygame.draw.rect(screen, CYAN, manual_rect, 2, border_radius=8)
+        m_label = fm.render("[2] Manual", True, CYAN)
+        screen.blit(m_label, (manual_rect.centerx - m_label.get_width() // 2,
+                               manual_rect.centery - m_label.get_height() // 2))
+
+        hint1 = fs.render("Agent: Q-learning controls the game. Press F for fast training.", True, GREY)
+        hint2 = fs.render("Manual: You play with arrow keys.", True, GREY)
+        screen.blit(hint1, (sw // 2 - hint1.get_width() // 2, sh // 2 + 70))
+        screen.blit(hint2, (sw // 2 - hint2.get_width() // 2, sh // 2 + 94))
+
+        pygame.display.flip()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_1: return "agent"
+                if event.key == pygame.K_2: return "manual"
+                if event.key == pygame.K_ESCAPE:
+                    pygame.quit(); sys.exit()
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if agent_rect.collidepoint(event.pos): return "agent"
+                if manual_rect.collidepoint(event.pos): return "manual"
 
 # ---------------------------------------------------------------------------
 # Game state initialization
@@ -929,11 +1141,10 @@ def run_tick(agent, weapons, enemies, gems,
     prev_gem_dist = min(
         (abs(agent.x - g[0]) + abs(agent.y - g[1]) for g in gems), default=0)
 
-    # Agent moves every AGENT_MOVE_EVERY ticks (two tiles at a time)
+    # Agent moves every AGENT_MOVE_EVERY ticks (one tile at a time)
     agent_move_timer += 1
     if agent_move_timer >= AGENT_MOVE_EVERY:
         agent_move_timer = 0
-        agent.move(dx, dy)
         agent.move(dx, dy)
 
     curr_gem_dist = min(
@@ -1028,10 +1239,13 @@ def run_tick(agent, weapons, enemies, gems,
     if len(enemies) == 0:
         wave   += 1
         enemies = spawn_enemies(5 + wave * 2, COLS, ROWS, agent, MAP)
-        if wave in BOSS_WAVES:
-            boss = spawn_boss(agent, MAP, COLS, ROWS)
-            if boss:
-                enemies.append(boss)
+
+    # Boss spawns once at the 6-minute mark
+    boss_present = any(e.symbol == "B" for e in enemies)
+    if tick_count == BOSS_SPAWN_TICK and not boss_present:
+        boss = spawn_boss(agent, MAP, COLS, ROWS)
+        if boss:
+            enemies.append(boss)
 
     if tick_count >= MAX_TICKS:
         episode_done = True
@@ -1212,13 +1426,16 @@ def run_fast_training(rl, weapon_rl, reward_history, start_episode):
 # Main entry point
 # ---------------------------------------------------------------------------
 def main():
-    global TRAINING, FAST_MODE, SCREEN_W, SCREEN_H
+    global FAST_MODE, SCREEN_W, SCREEN_H
 
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_W, SCREEN_H), pygame.RESIZABLE)
     pygame.display.set_caption("Vampire Survivors RL -- Capstone")
     clock     = pygame.time.Clock()
     tile_font = pygame.font.SysFont(None, 22)
+
+    # Mode selection (locked for session)
+    mode = run_mode_select(screen)
 
     # Off-screen surface for the game map (always 480x480)
     game_surface = pygame.Surface((W, H))
@@ -1250,6 +1467,9 @@ def main():
     training_done   = False
     running         = True
 
+    # Player input direction (for manual mode)
+    player_action = (0, 0)
+
     # Persistent RL decision state across frames
     rl_state  = rl.get_state(agent, enemies, gems, weapons, xp)
     rl_action = rl.choose_action(rl_state)
@@ -1269,27 +1489,22 @@ def main():
                     (SCREEN_W, SCREEN_H), pygame.RESIZABLE)
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE: running = False
-                if event.key == pygame.K_t:      TRAINING = not TRAINING
-                if event.key == pygame.K_f:
+                if event.key == pygame.K_f and mode == "agent":
                     FAST_MODE = not FAST_MODE
-                    if FAST_MODE and TRAINING:
+                    if FAST_MODE:
                         episode, last_tracker = run_fast_training(
                             rl, weapon_rl, reward_history, episode)
                         FAST_MODE     = False
                         training_done = True
-                if not TRAINING:
-                    if event.key == pygame.K_UP:
-                        agent.move(0, -1); agent.move(0, -1)
-                    if event.key == pygame.K_DOWN:
-                        agent.move(0, 1);  agent.move(0, 1)
-                    if event.key == pygame.K_LEFT:
-                        agent.move(-1, 0); agent.move(-1, 0)
-                    if event.key == pygame.K_RIGHT:
-                        agent.move(1, 0);  agent.move(1, 0)
+                if mode == "manual":
+                    if event.key == pygame.K_UP:    player_action = (0, -1)
+                    if event.key == pygame.K_DOWN:  player_action = (0, 1)
+                    if event.key == pygame.K_LEFT:  player_action = (-1, 0)
+                    if event.key == pygame.K_RIGHT: player_action = (1, 0)
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                if btn_rect and btn_rect.collidepoint(event.pos):
+                if btn_rect and btn_rect.collidepoint(event.pos) and mode == "agent":
                     FAST_MODE = not FAST_MODE
-                    if FAST_MODE and TRAINING:
+                    if FAST_MODE:
                         episode, last_tracker = run_fast_training(
                             rl, weapon_rl, reward_history, episode)
                         FAST_MODE     = False
@@ -1305,7 +1520,7 @@ def main():
         level_up     = False
         boss_win     = False
 
-        if TRAINING:
+        if mode == "agent":
             (agent, weapons, enemies, gems,
              wave, kills, xp, xp_level,
              tick_count, agent_move_timer,
@@ -1346,56 +1561,77 @@ def main():
                 rl_action = rl.choose_action(rl_state)
 
         else:
-            # Manual play mode
-            tick_count += 1
-            orbit_positions = []
-            update_seen_tiles(agent, seen_tiles)
-            if tick_count % 2 == 0:
-                for e in enemies:
-                    e.step_toward_agent(agent, MAP)
-                for e in list(enemies):
-                    if e.x == agent.x and e.y == agent.y:
-                        blocked = try_block_with_shield(agent, weapons, e, None)
-                        if not blocked:
-                            agent.hp -= e.damage
-                        if agent.hp <= 0:
-                            episode_done = True
-                            break
-            for key, weapon in weapons.items():
-                if weapon["type"] == "target":
-                    handle_wand(agent, weapon, enemies, gems, tick_count)
-                elif weapon["type"] == "arc":
-                    handle_axe(agent, weapon, active_projectiles)
-                elif weapon["type"] == "directional":
-                    handle_whip(agent, weapon, enemies, gems)
-                elif weapon["type"] == "orbit":
-                    _, _, orbit_positions = handle_books(
-                        agent, weapon, enemies, gems)
-            update_projectiles(active_projectiles, enemies, gems)
-            enemies[:] = [e for e in enemies if e.alive]
-            for gem in list(gems):
-                if agent.x == gem[0] and agent.y == gem[1]:
-                    gems.remove(gem)
-                    xp += 1
-                    if xp % 5 == 0:
-                        xp_level += 1
-                        level_up = True
+            # Manual play mode -- uses same run_tick as agent mode
+            (agent, weapons, enemies, gems,
+             wave, kills, xp, xp_level,
+             tick_count, agent_move_timer,
+             active_projectiles, seen_tiles, reward,
+             episode_done, orbit_positions,
+             boss_alive, level_up, boss_win) = run_tick(
+                agent, weapons, enemies, gems,
+                wave, kills, xp, xp_level,
+                tick_count, agent_move_timer,
+                active_projectiles, player_action,
+                seen_tiles)
+
+            # Reset direction after processing (no auto-repeat)
+            player_action = (0, 0)
+
             if level_up:
                 choices = generate_level_up_choices(weapons)
                 if choices:
                     idx = run_level_up_ui(screen, choices, weapons)
                     apply_choice(choices[idx], weapons)
-            if len(enemies) == 0:
-                wave   += 1
-                enemies = spawn_enemies(5 + wave * 2, COLS, ROWS, agent, MAP)
-                if wave in BOSS_WAVES:
-                    boss = spawn_boss(agent, MAP, COLS, ROWS)
-                    if boss:
-                        enemies.append(boss)
-            boss_alive = any(e.symbol == "B" for e in enemies)
 
-        # Episode end handling (training mode)
-        if episode_done and TRAINING:
+        # -- Episode end (manual mode) -----------------------------------------
+        if episode_done and mode == "manual":
+            # Show result screen
+            result_font = pygame.font.SysFont(None, 48)
+            sub_font    = pygame.font.SysFont(None, 28)
+            overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 180))
+            screen.blit(overlay, (0, 0))
+
+            if boss_win:
+                msg = result_font.render("VICTORY -- Boss Defeated!", True, GOLD)
+            else:
+                msg = result_font.render("GAME OVER", True, RED)
+
+            stats_lines = [
+                f"Wave: {wave}    Kills: {kills}",
+                f"Gems: {xp}    Level: {xp_level}",
+                f"Survived: {tick_count / FPS:.1f}s",
+            ]
+            screen.blit(msg, (SCREEN_W // 2 - msg.get_width() // 2, SCREEN_H // 3))
+            for i, line in enumerate(stats_lines):
+                s = sub_font.render(line, True, WHITE)
+                screen.blit(s, (SCREEN_W // 2 - s.get_width() // 2,
+                                SCREEN_H // 3 + 60 + i * 30))
+            hint = sub_font.render("Press R to restart or ESC to quit", True, GREY)
+            screen.blit(hint, (SCREEN_W // 2 - hint.get_width() // 2,
+                               SCREEN_H // 3 + 170))
+            pygame.display.flip()
+
+            waiting = True
+            while waiting:
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        pygame.quit(); sys.exit()
+                    elif event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_ESCAPE:
+                            pygame.quit(); sys.exit()
+                        if event.key == pygame.K_r:
+                            (agent, weapons, enemies, gems,
+                             wave, kills, xp, xp_level,
+                             tick_count, agent_move_timer,
+                             active_projectiles, seen_tiles) = reset_episode()
+                            boss_alive = False
+                            active_effects.clear()
+                            player_action = (0, 0)
+                            waiting = False
+
+        # -- Episode end (agent mode) -------------------------------------------
+        if episode_done and mode == "agent":
             reward_history.append(episode_reward)
             episode += 1
 
@@ -1424,6 +1660,7 @@ def main():
              active_projectiles, seen_tiles) = reset_episode()
             boss_alive = False
             ep_stats = tracker.start_episode()
+            active_effects.clear()
 
             rl_state  = rl.get_state(agent, enemies, gems, weapons, xp)
             rl_action = rl.choose_action(rl_state)
@@ -1453,6 +1690,8 @@ def main():
                                  pygame.Rect(ox * TILE, oy * TILE, TILE, TILE))
 
         draw_projectiles(game_surface, active_projectiles)
+        draw_effects(game_surface)
+        update_effects()
 
         if any(w["type"] == "defense" for w in weapons.values()):
             fx, fy = agent.facing
@@ -1485,8 +1724,11 @@ def main():
         # HUD and controls on main screen
         draw_hud(screen, agent, wave, kills, xp, xp_level,
                  weapons, episode, episode_reward, rl.epsilon,
-                 FAST_MODE, boss_alive)
-        btn_rect = draw_fast_button(screen, FAST_MODE)
+                 FAST_MODE, boss_alive, mode)
+        if mode == "agent":
+            btn_rect = draw_fast_button(screen, FAST_MODE)
+        else:
+            btn_rect = None
         pygame.display.flip()
 
     pygame.quit()
