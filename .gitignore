@@ -18,3 +18,7 @@ reward_history.json
 run_stats.json
 results_screen.png
 training_results.csv
+
+# Profiling 
+profile_training.py
+profile_results.txt
