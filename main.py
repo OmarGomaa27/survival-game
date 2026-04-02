@@ -210,30 +210,51 @@ def main():
         game_surface.fill(config.BLACK)
         draw_map(game_surface)
         for gx, gy in gems:
-            if spr_gem: game_surface.blit(spr_gem, (gx*config.TILE, gy*config.TILE))
+            if spr_gem:
+                game_surface.blit(spr_gem, (gx*config.TILE, gy*config.TILE))
             else:
                 rect = pygame.Rect(gx*config.TILE, gy*config.TILE, config.TILE, config.TILE)
                 pygame.draw.rect(game_surface, config.YELLOW, rect)
-                game_surface.blit(tile_font.render("*", True, config.BLACK), (gx*config.TILE+7, gy*config.TILE+4))
-        for ox, oy in orbit_t < config.COLS and 0 <= sy < config.ROWS:
+                game_surface.blit(tile_font.render("*", True, config.BLACK),
+                                  (gx*config.TILE+7, gy*config.TILE+4))
+        for ox, oy in orbit_positions:
+            if 0 <= ox < config.COLS and 0 <= oy < config.ROWS:
+                pygame.draw.rect(game_surface, config.BLUE,
+                                 pygame.Rect(ox*config.TILE, oy*config.TILE,
+                                             config.TILE, config.TILE))
+        draw_projectiles(game_surface, active_projectiles)
+        draw_effects(game_surface)
+        update_effects()
+        if any(w["type"] == "defense" for w in weapons.values()):
+            fx, fy = agent.facing
+            sx, sy = agent.x + fx, agent.y + fy
+            if 0 <= sx < config.COLS and 0 <= sy < config.ROWS:
                 pygame.draw.rect(game_surface, config.CYAN,
-                                 pygame.Rect(sx*config.TILE, sy*config.TILE, config.TILE, config.TILE), 3)
+                                 pygame.Rect(sx*config.TILE, sy*config.TILE,
+                                             config.TILE, config.TILE), 3)
         for e in enemies:
             if e.alive:
-                if e.symbol == "B" and spr_boss: game_surface.blit(spr_boss, (e.x*config.TILE, e.y*config.TILE))
-                elif e.symbol != "B" and spr_enemy: game_surface.blit(spr_enemy, (e.x*config.TILE, e.y*config.TILE))
-                else: e.draw(game_surface, config.TILE, tile_font)
-        if spr_player: game_surface.blit(spr_player, (agent.x*config.TILE, agent.y*config.TILE))
-        else: agent.draw(game_surface, tile_font)
+                if e.symbol == "B" and spr_boss:
+                    game_surface.blit(spr_boss, (e.x*config.TILE, e.y*config.TILE))
+                elif e.symbol != "B" and spr_enemy:
+                    game_surface.blit(spr_enemy, (e.x*config.TILE, e.y*config.TILE))
+                else:
+                    e.draw(game_surface, config.TILE, tile_font)
+        if spr_player:
+            game_surface.blit(spr_player, (agent.x*config.TILE, agent.y*config.TILE))
+        else:
+            agent.draw(game_surface, tile_font)
         draw_fog(game_surface, agent)
         screen.fill(config.BLACK)
-        screen.blit(game_surface, ((config.SCREEN_W-config.W)//2, (config.SCREEN_H-config.H)//2))
+        screen.blit(game_surface, ((config.SCREEN_W-config.W)//2,
+                                   (config.SCREEN_H-config.H)//2))
         draw_hud(screen, agent, wave, kills, xp, xp_level, weapons,
                  episode, episode_reward, rl.epsilon, config.FAST_MODE, boss_alive, mode)
         btn_rect = draw_fast_button(screen, config.FAST_MODE) if mode == "agent" else None
         pygame.display.flip()
 
-    pygame.quit(); sys.exit()
+    pygame.quit()
+    sys.exit()
 
 
 if __name__ == "__main__":

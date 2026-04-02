@@ -194,6 +194,13 @@ def run_tick(agent, weapons, enemies, gems,
         danger_mult = 1.0 + 3.0 * (1.0 - hp_ratio)
         reward -= 2.0 * (hp_lost / 5.0) * danger_mult
 
+    # Proximity danger: penalize being near enemies when HP is low
+    if moved and enemies:
+        nearest_enemy_dist = min(
+            abs(e.x - agent.x) + abs(e.y - agent.y) for e in enemies)
+        if agent.hp <= 50 and nearest_enemy_dist <= 2:
+            reward -= 3.0 * (1.0 - agent.hp / 100.0)
+
     if boss_win:
         remaining_ratio = (MAX_TICKS - tick_count) / MAX_TICKS
         reward = 100.0 + remaining_ratio * 200.0
