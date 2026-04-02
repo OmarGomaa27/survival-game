@@ -22,3 +22,6 @@ training_results.csv
 # Profiling 
 profile_training.py
 profile_results.txt
+
+# Diagnosis
+diagnosis.py

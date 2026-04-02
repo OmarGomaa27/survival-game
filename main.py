@@ -215,15 +215,7 @@ def main():
                 rect = pygame.Rect(gx*config.TILE, gy*config.TILE, config.TILE, config.TILE)
                 pygame.draw.rect(game_surface, config.YELLOW, rect)
                 game_surface.blit(tile_font.render("*", True, config.BLACK), (gx*config.TILE+7, gy*config.TILE+4))
-        for ox, oy in orbit_positions:
-            if 0 <= ox < config.COLS and 0 <= oy < config.ROWS:
-                pygame.draw.rect(game_surface, config.BLUE,
-                                 pygame.Rect(ox*config.TILE, oy*config.TILE, config.TILE, config.TILE))
-        draw_projectiles(game_surface, active_projectiles)
-        draw_effects(game_surface); update_effects()
-        if any(w["type"] == "defense" for w in weapons.values()):
-            fx, fy = agent.facing; sx, sy = agent.x+fx, agent.y+fy
-            if 0 <= sx < config.COLS and 0 <= sy < config.ROWS:
+        for ox, oy in orbit_t < config.COLS and 0 <= sy < config.ROWS:
                 pygame.draw.rect(game_surface, config.CYAN,
                                  pygame.Rect(sx*config.TILE, sy*config.TILE, config.TILE, config.TILE), 3)
         for e in enemies:
