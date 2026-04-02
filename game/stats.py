@@ -11,6 +11,7 @@ class EpisodeStats:
         self.weapon_level   = {}   # key -> final level at episode end
         self.weapon_present = set()
         self.hp_saved       = {}   # key -> total HP saved this episode
+        self.hp_healed = {}   # key -> total HP healed this episode
 
         # Diagnostics
         self.gems_collected   = 0
@@ -21,6 +22,7 @@ class EpisodeStats:
         self.moves_total      = 0
         self.tiles_revealed   = 0
         self.boss_win         = False
+        
 
         # weapon choice tracking
         self.weapon_choices   = []  # list of (choices, weights, picked_idx)
@@ -32,6 +34,10 @@ class EpisodeStats:
     def record_block(self, weapon_key, damage_blocked):
         self.hp_saved[weapon_key] = \
             self.hp_saved.get(weapon_key, 0) + damage_blocked
+        
+    def record_heal(self, weapon_key, amount):
+        self.hp_healed[weapon_key] = \
+            self.hp_healed.get(weapon_key, 0) + amount
 
     def record_weapon_state(self, weapons):
         for key, w in weapons.items():
@@ -84,6 +90,7 @@ class RunTracker:
         self._weapon_dps_sum     = {}   # key -> sum of dps values
         self._weapon_dps_max     = {}   # key -> max dps ever seen
         self._weapon_hp_saved_sum = {}  # key -> total HP saved across episodes
+        self._weapon_hp_healed_sum = {} # key -> total HP healed across episodes
         self._player_level_sum   = 0
 
         # Diagnostic accumulators
@@ -110,6 +117,10 @@ class RunTracker:
     def start_episode(self):
         self._current = EpisodeStats()
         return self._current
+    
+    def weapon_avg_hp_healed(self, key):
+        n = self._weapon_episodes.get(key, 0)
+        return self._weapon_hp_healed_sum.get(key, 0.0) / max(n, 1)
 
     def end_episode(self, won=False):
         ep = self._current
@@ -158,6 +169,9 @@ class RunTracker:
             self._weapon_hp_saved_sum[key] = \
                 self._weapon_hp_saved_sum.get(key, 0) + \
                 ep.hp_saved.get(key, 0)
+            self._weapon_hp_healed_sum[key] = \
+                self._weapon_hp_healed_sum.get(key, 0) + \
+                ep.hp_healed.get(key, 0)
             if won:
                 self._weapon_wins[key] = self._weapon_wins.get(key, 0) + 1
 

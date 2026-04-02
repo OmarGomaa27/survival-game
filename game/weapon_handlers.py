@@ -147,9 +147,11 @@ def handle_whip(agent, weapon, enemies, gems,
                     dmg     = weapon["damage"]
                     e.take_damage(dmg)
                     agent.hp = min(agent.hp + 3, 100)
+                    if ep_stats:
+                        ep_stats.record_heal("whip", 3)
                     add_effect(e.x, e.y, (255,80,80), frames=3, style="ring")
                     if ep_stats:
-                        ep_stats.record_damage(weapon_key, dmg)
+                        ep_stats.record_damage("whip", dmg)
                     if not e.alive:
                         enemies.remove(e)
                         if is_boss:

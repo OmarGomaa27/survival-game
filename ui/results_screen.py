@@ -106,7 +106,7 @@ def render_results_surface(reward_history, sw, tracker=None):
         keys = tracker.all_weapon_keys()
         ty = dy
         pygame.draw.line(surf, config.GREY, (8, ty - 4), (sw - 8, ty - 4), 1)
-        headers = ["Weapon","Apps","DPS","Max DPS","Win%","Avg Lv"]
+        headers = ["Weapon","Apps","DPS","Max DPS","Win%","Avg Lv","HP Heal"]
         n_cols = len(headers)
         col_pad = 12
         col_span = (sw - 2*col_pad) / n_cols
@@ -119,7 +119,8 @@ def render_results_surface(reward_history, sw, tracker=None):
             name = WNAMES.get(key, key)
             vals = [name, str(tracker.weapon_appearances(key)),
                     f"{tracker.weapon_avg_dps(key):.2f}", f"{tracker.weapon_max_dps(key):.2f}",
-                    f"{tracker.weapon_win_rate(key)*100:.1f}%", f"{tracker.weapon_avg_level(key):.1f}"]
+                    f"{tracker.weapon_win_rate(key)*100:.1f}%", f"{tracker.weapon_avg_level(key):.1f}",
+                    f"{tracker.weapon_avg_hp_healed(key):.1f}"]
             rc = config.CYAN if row % 2 == 0 else config.WHITE
             for cx, v in zip(col_x, vals):
                 surf.blit(fxs.render(v, True, rc), (cx, ry))
