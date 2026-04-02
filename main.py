@@ -396,6 +396,8 @@ def handle_whip(agent, weapon, enemies, gems,
                     is_boss = e.symbol == "B"
                     dmg     = weapon["damage"]
                     e.take_damage(dmg)
+                    # Whip lifesteal: 3 HP per hit, capped at 100
+                    agent.hp = min(agent.hp + 3, 100)
                     # Whip strike flash (red ring on target)
                     add_effect(e.x, e.y, (255, 80, 80), frames=3, style="ring")
                     if ep_stats:
@@ -1278,6 +1280,9 @@ def run_tick(agent, weapons, enemies, gems,
     # -- Reward computation -------------------------------------------------
     reward = 0.0
 
+    # Survival tick bonus (tiny per tick, but dying early forfeits future ticks)
+    reward += 0.05
+
     # Exploration: small reward for seeing new tiles
     if new_tiles > 0:
         reward += 0.3 * new_tiles
@@ -1303,10 +1308,12 @@ def run_tick(agent, weapons, enemies, gems,
     # Kill reward (small -- agent does not directly control weapons)
     reward += tick_nk * 1.0
 
-    # Damage penalty (scaled by amount)
+    # Damage penalty (scales with danger — hurts more at low HP)
     hp_lost = prev_hp - agent.hp
     if hp_lost > 0:
-        reward -= 2.0 * (hp_lost / 5.0)
+        hp_ratio = agent.hp / 100.0
+        danger_mult = 1.0 + 3.0 * (1.0 - hp_ratio)
+        reward -= 2.0 * (hp_lost / 5.0) * danger_mult
 
     # Terminal rewards
     if boss_win:
