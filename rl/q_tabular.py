@@ -2,7 +2,6 @@ import random
 import math
 
 # Weapon key -> integer id for state encoding
-# Shield (id 4) is disabled but reserved for potential re-addition
 WEAPON_IDS = {"wand": 0, "axe": 1, "whip": 2, "books": 3, "shield": 4}
 
 
@@ -50,11 +49,10 @@ class QLearningAgent:
           (ex, ey,              # direction to nearest enemy (-1/0/1)
            enemy_dist_bucket,   # 0=adjacent 1=close 2=medium 3=far/none
            gx, gy,              # direction to nearest gem (-1/0/1)
-           gem_dist_bucket,     # 0=near(≤3) 1=mid(4-6) 2=far(7+)
+           gem_dist_bucket,     # 0=near(<=3) 1=mid(4-6) 2=far(7+)
            wall_blocks_gem,     # 0=clear 1=wall blocks gem-x 2=blocks gem-y 3=both
-           hp_bucket)           # 0=critical(≤25) 1=low(≤50) 2=ok
+           hp_bucket)           # 0=critical(<=25) 1=low(<=50) 2=ok
         """
-        # -- Nearest enemy -----------------------------------------------------
         nearest_enemy, best_e = None, float('inf')
         for e in enemies:
             d = ((e.x - agent.x)**2 + (e.y - agent.y)**2) ** 0.5
@@ -67,16 +65,15 @@ class QLearningAgent:
             ey = int(math.copysign(1, nearest_enemy.y - agent.y)) \
                  if nearest_enemy.y != agent.y else 0
             if best_e <= 2:
-                enemy_dist = 0    # adjacent — danger
+                enemy_dist = 0
             elif best_e <= 4:
-                enemy_dist = 1    # close
+                enemy_dist = 1
             else:
-                enemy_dist = 2    # medium
+                enemy_dist = 2
         else:
             ex = ey = 0
-            enemy_dist = 3        # far / none
+            enemy_dist = 3
 
-        # -- Nearest gem -------------------------------------------------------
         nearest_gem, best_g = None, float('inf')
         for g in gems:
             d = abs(g[0] - agent.x) + abs(g[1] - agent.y)
@@ -89,16 +86,15 @@ class QLearningAgent:
             gy = int(math.copysign(1, nearest_gem[1] - agent.y)) \
                  if nearest_gem[1] != agent.y else 0
             if best_g <= 3:
-                gem_dist = 0      # near
+                gem_dist = 0
             elif best_g <= 6:
-                gem_dist = 1      # medium
+                gem_dist = 1
             else:
-                gem_dist = 2      # far
+                gem_dist = 2
         else:
             gx = gy = 0
             gem_dist = 2
 
-        # ── Wall blocking gem direction (2 bits → 4 values) ──
         def blocked(dx, dy):
             nx, ny = agent.x + dx, agent.y + dy
             if not (0 <= nx < self.map_cols and 0 <= ny < self.map_rows):
@@ -107,15 +103,14 @@ class QLearningAgent:
 
         block_x = 1 if (gx != 0 and blocked(gx, 0)) else 0
         block_y = 1 if (gy != 0 and blocked(0, gy)) else 0
-        wall_blocks_gem = block_x + block_y * 2  # 0=clear 1=x 2=y 3=both
+        wall_blocks_gem = block_x + block_y * 2
 
-        # ── HP bucket ─────────────────────────────────────────
         if agent.hp <= 25:
-            hp_b = 0      # critical
+            hp_b = 0
         elif agent.hp <= 50:
-            hp_b = 1      # low
+            hp_b = 1
         else:
-            hp_b = 2      # ok
+            hp_b = 2
 
         return (ex, ey, enemy_dist,
                 gx, gy, gem_dist,
@@ -125,15 +120,20 @@ class QLearningAgent:
 
 class WeaponChoiceAgent:
     """
-    Separate Q-Learning agent that handles weapon selection on level up.
+    Weapon selection agent that evaluates each choice INDEPENDENTLY.
 
-    State: (hp_bracket, wave_bracket, enemy_pressure,
-            choice0_enc, choice1_enc, choice2_enc)
+    Instead of learning "pick position 0/1/2" (which is meaningless
+    when choices are shuffled), this agent scores each weapon option
+    on its own merits:
 
-    Where each choice is encoded as:
-        (is_new: 0/1, weapon_id: 0-4, current_level: 1-10)
+        state = (hp_bracket, wave_bracket, pressure,
+                 is_new, weapon_id, level_bracket)
 
-    Actions: 0, 1, 2  (which card to pick)
+    To decide: compute Q(state) for each of the 3 choices, pick highest.
+    Now it's learning "Magic Wand upgrades are good when HP is high"
+    instead of "click the left card."
+
+    ~1440 possible states, each visited many times = actual learning.
     """
 
     def __init__(self, alpha=0.15, gamma=0.90,
@@ -144,86 +144,86 @@ class WeaponChoiceAgent:
         self.epsilon_decay = epsilon_decay
         self.epsilon_min   = epsilon_min
         self.q_table       = {}
-        self.actions       = [0, 1, 2]
 
-        # Store ALL pending choices per episode (not just the last one)
-        self._pending_choices = []  # list of (state, action)
+        self._pending_choices = []  # list of states that were picked
 
     # ── Q helpers ─────────────────────────────────────────────
-    def get_q(self, state, action):
-        return self.q_table.get(state, {}).get(action, 0.0)
+    def get_q(self, state):
+        return self.q_table.get(state, 0.0)
 
-    def _set_q(self, state, action, value):
-        if state not in self.q_table:
-            self.q_table[state] = {}
-        self.q_table[state][action] = value
+    def _set_q(self, state, value):
+        self.q_table[state] = value
 
-    # ── State encoding ────────────────────────────────────────
-    def encode_choice(self, kind, key, weapons):
-        is_new    = 1 if kind == "new" else 0
-        wid       = WEAPON_IDS.get(key, 0)
-        cur_level = weapons[key]["level"] if key in weapons else 1
-        return (is_new, wid, cur_level)
-
-    def get_state(self, agent, enemies, weapons, wave, choices):
-        # HP bracket
+    # ── State encoding (per-choice) ──────────────────────────
+    def _encode_context(self, agent, enemies, wave):
         if agent.hp > 66:   hp_b = 2
         elif agent.hp > 33: hp_b = 1
         else:               hp_b = 0
 
-        # wave bracket (0-4)
         wave_b = min(wave // 3, 4)
 
-        # enemy pressure (how many close enemies)
         close = sum(1 for e in enemies
-                    if ((e.x-agent.x)**2+(e.y-agent.y)**2)**0.5 <= 5)
+                    if ((e.x - agent.x)**2 + (e.y - agent.y)**2)**0.5 <= 5)
         pressure = min(close, 3)
 
-        # encode each of the 3 choices
-        encs = []
-        for i in range(3):
-            if i < len(choices):
-                kind, key = choices[i]
-                encs.append(self.encode_choice(kind, key, weapons))
-            else:
-                encs.append((0, 0, 1))   # padding
+        return (hp_b, wave_b, pressure)
 
-        return (hp_b, wave_b, pressure, *encs)
+    def _encode_choice(self, kind, key, weapons):
+        is_new = 1 if kind == "new" else 0
+        wid    = WEAPON_IDS.get(key, 0)
 
-    # ── Decision ──────────────────────────────────────────────
-    def choose(self, state, n_choices):
-        valid = list(range(n_choices))
+        cur_level = weapons[key]["level"] if key in weapons else 0
+        if cur_level == 0:
+            lvl_b = 0   # new weapon
+        elif cur_level <= 3:
+            lvl_b = 1   # low
+        elif cur_level <= 6:
+            lvl_b = 2   # mid
+        else:
+            lvl_b = 3   # high
+
+        return (is_new, wid, lvl_b)
+
+    # ── Public API (called from main.py) ─────────────────────
+    def get_state(self, agent, enemies, weapons, wave, choices):
+        """Returns a list of per-choice states."""
+        context = self._encode_context(agent, enemies, wave)
+        states = []
+        for kind, key in choices:
+            enc = self._encode_choice(kind, key, weapons)
+            states.append(context + enc)
+        return states
+
+    def choose(self, choice_states, n_choices):
+        """Pick best choice by comparing independent Q-values."""
         if random.random() < self.epsilon:
-            return random.choice(valid)
-        qs = {a: self.get_q(state, a) for a in valid}
-        return max(qs, key=qs.get)
+            return random.choice(list(range(n_choices)))
 
-    def record_choice(self, state, action):
-        """Call right after making a weapon choice. Stores ALL choices
-        made during an episode, not just the last one."""
-        self._pending_choices.append((state, action))
+        best_idx = 0
+        best_q   = self.get_q(choice_states[0])
+        for i in range(1, n_choices):
+            q = self.get_q(choice_states[i])
+            if q > best_q:
+                best_q   = q
+                best_idx = i
+        return best_idx
+
+    def record_choice(self, choice_states, picked_idx):
+        """Record the picked choice's state for later update."""
+        self._pending_choices.append(choice_states[picked_idx])
 
     def update(self, reward, next_state=None):
-        """Update Q-values for ALL weapon choices made this episode.
-        Each choice receives the same episode reward signal, since
-        we cannot attribute reward to individual weapon picks."""
+        """Update Q-values for ALL weapon choices made this episode."""
         if not self._pending_choices:
             return
 
-        for s, a in self._pending_choices:
-            current_q = self.get_q(s, a)
-            if next_state is not None:
-                max_next = max(self.get_q(next_state, x) for x in self.actions)
-            else:
-                max_next = 0.0
-
-            new_q = current_q + self.alpha * (
-                        reward + self.gamma * max_next - current_q)
-            self._set_q(s, a, new_q)
+        for s in self._pending_choices:
+            current_q = self.get_q(s)
+            new_q = current_q + self.alpha * (reward - current_q)
+            self._set_q(s, new_q)
 
         self.epsilon = max(self.epsilon_min,
                            self.epsilon * self.epsilon_decay)
-
         self._pending_choices.clear()
 
     def has_pending(self):

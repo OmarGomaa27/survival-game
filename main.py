@@ -113,20 +113,32 @@ def load_sprite(filename):
 # ---------------------------------------------------------------------------
 # Fog of war / exploration
 # ---------------------------------------------------------------------------
+# OPTIMIZATION: skip when agent hasn't moved (was 9% of runtime)
+_seen_last_pos = [None, None]
+
 def update_seen_tiles(agent, seen_tiles):
     """Mark tiles within FOG_RADIUS as seen.  Only checks the small
-    bounding box around the agent to keep fast-mode training performant."""
+    bounding box around the agent to keep fast-mode training performant.
+    Skips entirely if the agent hasn't moved since last call."""
+    if _seen_last_pos[0] == agent.x and _seen_last_pos[1] == agent.y:
+        return 0
+    _seen_last_pos[0], _seen_last_pos[1] = agent.x, agent.y
+
     new_count = 0
     r = FOG_RADIUS
-    min_row = max(0, agent.y - r)
-    max_row = min(ROWS - 1, agent.y + r)
-    min_col = max(0, agent.x - r)
-    max_col = min(COLS - 1, agent.x + r)
+    r_sq = r * r
+    ax, ay = agent.x, agent.y
+    min_row = max(0, ay - r)
+    max_row = min(ROWS - 1, ay + r)
+    min_col = max(0, ax - r)
+    max_col = min(COLS - 1, ax + r)
     for row in range(min_row, max_row + 1):
+        dy = row - ay
+        dy_sq = dy * dy
         for col in range(min_col, max_col + 1):
             if (col, row) not in seen_tiles:
-                dist_sq = (col - agent.x)**2 + (row - agent.y)**2
-                if dist_sq <= r * r:
+                dx = col - ax
+                if dx * dx + dy_sq <= r_sq:
                     seen_tiles.add((col, row))
                     new_count += 1
     return new_count
@@ -220,6 +232,18 @@ def spawn_boss(agent, game_map, cols, rows):
                      hp=300, damage=25, speed=3,
                      color=PURPLE, symbol="B")
     return None
+
+# ---------------------------------------------------------------------------
+# Nearest gem helper (avoids generator expression overhead)
+# ---------------------------------------------------------------------------
+def _nearest_gem_dist(ax, ay, gems):
+    """Manhattan distance to closest gem. Returns 9999 if no gems."""
+    best = 9999
+    for g in gems:
+        d = abs(ax - g[0]) + abs(ay - g[1])
+        if d < best:
+            best = d
+    return best
 
 # ---------------------------------------------------------------------------
 # Weapon handlers
@@ -1119,6 +1143,8 @@ def make_initial_state():
     return agent, weapons, enemies, gems
 
 def reset_episode():
+    global _seen_last_pos
+    _seen_last_pos[0], _seen_last_pos[1] = None, None   # reset cache
     agent, weapons, enemies, gems = make_initial_state()
     seen_tiles = set()
     update_seen_tiles(agent, seen_tiles)
@@ -1138,20 +1164,19 @@ def run_tick(agent, weapons, enemies, gems,
     prev_hp = agent.hp
     prev_xp = xp
 
-    prev_gem_dist = min(
-        (abs(agent.x - g[0]) + abs(agent.y - g[1]) for g in gems), default=0)
-
-    # Agent moves every AGENT_MOVE_EVERY ticks (one tile at a time)
+    # OPTIMIZATION: gem distance only computed when agent moves (was 37%+11% of runtime)
     agent_move_timer += 1
-    if agent_move_timer >= AGENT_MOVE_EVERY:
+    moved = agent_move_timer >= AGENT_MOVE_EVERY
+    if moved:
         agent_move_timer = 0
+        prev_gem_dist = _nearest_gem_dist(agent.x, agent.y, gems)
         agent.move(dx, dy)
-
-    curr_gem_dist = min(
-        (abs(agent.x - g[0]) + abs(agent.y - g[1]) for g in gems), default=0)
+        curr_gem_dist = _nearest_gem_dist(agent.x, agent.y, gems)
+    else:
+        prev_gem_dist = curr_gem_dist = 0
 
     # Record move quality for diagnostics
-    if agent_move_timer == 0 and ep_stats and gems:
+    if moved and ep_stats and gems:
         if curr_gem_dist < prev_gem_dist:
             ep_stats.record_move(True)
         elif curr_gem_dist > prev_gem_dist:
@@ -1241,8 +1266,8 @@ def run_tick(agent, weapons, enemies, gems,
         enemies = spawn_enemies(5 + wave * 2, COLS, ROWS, agent, MAP)
 
     # Boss spawns once at the 6-minute mark
-    boss_present = any(e.symbol == "B" for e in enemies)
-    if tick_count == BOSS_SPAWN_TICK and not boss_present:
+    # OPTIMIZATION: only check at exact spawn tick (was 5% of runtime)
+    if tick_count == BOSS_SPAWN_TICK:
         boss = spawn_boss(agent, MAP, COLS, ROWS)
         if boss:
             enemies.append(boss)
@@ -1258,12 +1283,9 @@ def run_tick(agent, weapons, enemies, gems,
         reward += 0.3 * new_tiles
 
     # Gem approach: only when gem is visible (within FOG_RADIUS)
-    # This teaches "when you see a gem, go get it" without
-    # punishing long-distance wall navigation
-    if gems and agent_move_timer == 0:
-        nearest_gem_dist = min(
-            abs(agent.x - g[0]) + abs(agent.y - g[1]) for g in gems)
-        if nearest_gem_dist <= FOG_RADIUS:
+    # OPTIMIZATION: reuse curr_gem_dist instead of recomputing min()
+    if moved and gems:
+        if curr_gem_dist <= FOG_RADIUS:
             if curr_gem_dist < prev_gem_dist:
                 reward += 5.0
             elif curr_gem_dist > prev_gem_dist:
@@ -1296,7 +1318,11 @@ def run_tick(agent, weapons, enemies, gems,
     elif episode_done:
         reward += 50.0
 
-    boss_alive = any(e.symbol == "B" for e in enemies)
+    # OPTIMIZATION: boss_alive only checked after BOSS_SPAWN_TICK (was 5% of runtime)
+    if tick_count >= BOSS_SPAWN_TICK:
+        boss_alive = any(e.symbol == "B" for e in enemies)
+    else:
+        boss_alive = False
 
     return (agent, weapons, enemies, gems,
             wave, kills, xp, xp_level,
@@ -1344,18 +1370,18 @@ def run_fast_training(rl, weapon_rl, reward_history, start_episode):
             if level_up:
                 choices = generate_level_up_choices(weapons)
                 if choices:
-                    w_state = weapon_rl.get_state(agent, enemies, weapons, wave, choices)
-                    idx = weapon_rl.choose(w_state, len(choices))
-                    weapon_rl.record_choice(w_state, idx)
-                    # Record Q-values as weights for diagnostics
-                    q_weights = [weapon_rl.get_q(w_state, i) for i in range(len(choices))]
+                    w_states = weapon_rl.get_state(agent, enemies, weapons, wave, choices)
+                    idx = weapon_rl.choose(w_states, len(choices))
+                    weapon_rl.record_choice(w_states, idx)
+                    q_weights = [weapon_rl.get_q(s) for s in w_states]
                     if ep_stats:
                         ep_stats.weapon_choices.append((choices, q_weights, idx))
                     apply_choice(choices[idx], weapons)
+                # OPTIMIZATION: record weapon state on level-up (was every tick = 2% of runtime)
+                ep_stats.record_weapon_state(weapons)
 
             ep_stats.ticks        = tick_count
             ep_stats.player_level = xp_level
-            ep_stats.record_weapon_state(weapons)
 
             # Q-update only on actual movement ticks or episode end
             moved = (agent_move_timer == 0)
@@ -1368,6 +1394,9 @@ def run_fast_training(rl, weapon_rl, reward_history, start_episode):
                     won = boss_win or (tick_count >= MAX_TICKS)
                     if boss_win:
                         ep_stats.boss_win = True
+
+                    # Final weapon state snapshot before episode ends
+                    ep_stats.record_weapon_state(weapons)
 
                     # Update weapon Q-agent with episode outcome
                     weapon_rl.update(episode_reward)
@@ -1539,10 +1568,10 @@ def main():
             if level_up:
                 choices = generate_level_up_choices(weapons)
                 if choices:
-                    w_state = weapon_rl.get_state(agent, enemies, weapons, wave, choices)
-                    idx = weapon_rl.choose(w_state, len(choices))
-                    weapon_rl.record_choice(w_state, idx)
-                    q_weights = [weapon_rl.get_q(w_state, i) for i in range(len(choices))]
+                    w_states = weapon_rl.get_state(agent, enemies, weapons, wave, choices)
+                    idx = weapon_rl.choose(w_states, len(choices))
+                    weapon_rl.record_choice(w_states, idx)
+                    q_weights = [weapon_rl.get_q(s) for s in w_states]
                     if ep_stats:
                         ep_stats.weapon_choices.append((choices, q_weights, idx))
                     apply_choice(choices[idx], weapons)
