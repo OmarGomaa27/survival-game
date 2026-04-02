@@ -170,7 +170,7 @@ def run_tick(agent, weapons, enemies, gems,
     reward += 0.05
 
     if new_tiles > 0:
-        reward += 0.3 * new_tiles
+        reward += 0.8 * new_tiles
 
     if moved and gems:
         if curr_gem_dist <= FOG_RADIUS:
