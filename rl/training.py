@@ -72,13 +72,13 @@ def run_fast_training(rl, weapon_rl, reward_history, start_episode):
         reward_history.append(episode_reward)
         episode += 1
 
-        if episode % 100 == 0:
+        if episode % 5000 == 0:
             avg = sum(reward_history[-100:]) / 100
             wr  = tracker.win_rate() * 100
             print(f"  Ep {episode:5d} | Avg(100): {avg:8.2f} | "
                   f"WinRate: {wr:.1f}% | eps:{rl.epsilon:.3f}")
 
-        if episode % 1000 == 0 and episode > 0:
+        if episode % 20000 == 0 and episode > 0:
             print(f"\n  --- Diagnostics at ep {episode} ---")
             print(f"    Avg Ticks:  {tracker.avg_ticks():.0f}")
             print(f"    Avg Gems:   {tracker.avg_gems():.1f}")

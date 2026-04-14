@@ -20,7 +20,7 @@ def run_mode_select(screen):
     fs = pygame.font.SysFont(None, 22)
     while True:
         screen.fill((10, 10, 20))
-        title = ft.render("Vampire Survivors RL", True, config.GOLD)
+        title = ft.render("Survivor Game RL", True, config.GOLD)
         screen.blit(title, (sw // 2 - title.get_width() // 2, sh // 4))
         sub = fm.render("Select Mode:", True, config.WHITE)
         screen.blit(sub, (sw // 2 - sub.get_width() // 2, sh // 4 + 60))
@@ -55,7 +55,7 @@ def run_mode_select(screen):
 def main():
     pygame.init()
     screen = pygame.display.set_mode((config.SCREEN_W, config.SCREEN_H), pygame.RESIZABLE)
-    pygame.display.set_caption("Vampire Survivors RL -- Capstone")
+    pygame.display.set_caption("Survivor Game RL")
     clock     = pygame.time.Clock()
     tile_font = pygame.font.SysFont(None, 22)
     mode = run_mode_select(screen)
@@ -202,7 +202,7 @@ def main():
             boss_alive = False; ep_stats = tracker.start_episode(); active_effects.clear()
             rl_state = rl.get_state(agent, enemies, gems)
             rl_action = rl.choose_action(rl_state); rl_accum = 0.0
-            if episode % 50 == 0:
+            if episode % 5000 == 0:
                 avg = sum(reward_history[-50:]) / 50
                 print(f"Ep {episode:4d} | Avg(50): {avg:7.2f} | eps:{rl.epsilon:.3f}")
 
