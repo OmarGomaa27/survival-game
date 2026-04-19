@@ -8,7 +8,7 @@ WEAPON_IDS = {"wand": 0, "axe": 1, "whip": 2, "books": 3, "shield": 4}
 class QLearningAgent:
     """Handles movement decisions."""
 
-    def __init__(self, actions, game_map=None, alpha=0.3, gamma=0.95, 
+    def __init__(self, actions, game_map=None, alpha=0.1, gamma=0.95, 
                  epsilon=0.5, epsilon_decay=0.9997, epsilon_min=0.06): 
         self.actions       = actions #UP, DOWN, LEFT, RIGHT, STAY
         self.alpha         = alpha # learning rate (how much new info overrides old) [0.0-1.0]
@@ -143,7 +143,7 @@ class WeaponChoiceAgent:
     # The weapon agent acts maybe once or twice per episode and only learns the outcome when the episode ends. 
     # It's a much harder learning problem — like evaluating whether a chess opening was good based on who won 50 moves later.
 
-    def __init__(self, alpha=0.15, gamma=0.90,
+    def __init__(self, alpha=0.05, gamma=0.90,
                  epsilon=0.6, epsilon_decay=0.997, epsilon_min=0.10):   # alpha=learning rate, gamma=discount factor, 
                                                                         # epsilon=exploration rate, epsilon_decay=decay rate for exploration, 
                                                                         # epsilon_min=minimum exploration rate

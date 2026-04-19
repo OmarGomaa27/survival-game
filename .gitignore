@@ -25,3 +25,5 @@ profile_results.txt
 
 # Diagnosis
 diagnosis.py
+lr_experiment.py
+lr_results.csv
