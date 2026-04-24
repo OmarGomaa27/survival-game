@@ -67,7 +67,7 @@ python main.py
 ## Game Mechanics
 
 | Mechanic | Details |
-|----------|---------
+|----------|---------|
 | Map | 20×20 tile grid with internal walls |
 | Fog of War | Agent sees 3-tile radius only |
 | Enemies | Chase player, spawn in escalating waves |
@@ -95,15 +95,15 @@ Controls where the agent moves each tick using tabular Q-learning.
 
 - **Actions:** UP, DOWN, LEFT, RIGHT, STAY (5 actions)
 - **State:** 8-element tuple encoding enemy direction/distance, gem direction/distance, wall awareness, HP level
-- **State space:** 3,888 unique states × 5 actions = 19,440 Q-table entries
-- **Hyperparameters:** α=0.3, γ=0.95, ε decays from 0.5 → 0.06
+- **State space:** 11,664 unique states × 5 actions = 58,320 Q-table entries
+- **Hyperparameters:** α=0.10, γ=0.95, ε decays from 0.5 → 0.06
 
 ### Weapon Choice Agent (WeaponChoiceAgent)
 
 Decides which weapon to pick/upgrade on level-up. Evaluates each choice independently.
 
 - **State:** 6-element tuple (HP bracket, wave, pressure, is_new, weapon_id, level_bracket)
-- **State space:** 2,400 unique states
+- **State space:** 1,920 unique states
 - **Update:** Delayed — all choices in an episode receive the terminal reward
 
 ---
@@ -113,6 +113,8 @@ Decides which weapon to pick/upgrade on level-up. Evaluates each choice independ
 ```
 survival-game/
 ├── main.py                    # Entry point, game loop, mode select
+├── diagnosis.py               # Headless diagnostic tool — policy analysis, Q-table coverage, flee/chase behavior
+├── lr_experiment.py           # Learning rate comparison experiment (outputs lr_results.csv)
 │
 ├── game/
 │   ├── config.py              # Constants, colors, MAP, hyperparameters
@@ -139,6 +141,10 @@ survival-game/
 │   └── plots.py               # Matplotlib convergence plot
 │
 ├── assets/                    # Sprites (player, enemy, boss, gem)
+├── lr_results.csv             # Learning rate experiment results
+├── reward_history.json        # Per-episode reward values from 100k training run
+├── run_stats.json             # Aggregate statistics from 100k training run
+├── smoothed_rewards.csv       # Pre-smoothed reward data used for convergence chart
 └── requirements.txt
 ```
 
@@ -148,20 +154,20 @@ survival-game/
 
 | Metric | Start | Final | Target |
 |--------|-------|-------|--------|
-| Win Rate | 1.5% | 5.9% | 15% |
-| Reward Improvement | — | +1,008 | Convergence ✓ |
-| Avg Map Explored | 37% | 41% | 60% |
-| Gem Approach % | 47% | 72% | 65% ✓ |
-| Avg Player Level | 1.1 | 5.0 | 4 ✓ |
+| Win Rate | 4% | 10.9% | 15% |
+| Reward Improvement | +50 | +3,036 | Convergence ✓ |
+| Avg Map Explored | 49% | 51% | 60% |
+| Gem Approach % | 53% | 74% | 65% ✓ |
+| Avg Player Level | 1.1 | 9.1 | 4 ✓ |
 
 ### Weapon Agent Learned Preferences
 
 | Weapon | Pick Rate | Win Rate | HP Healed/Ep |
-|--------|-----------|----------|-------------|
-| Magic Wand | 52.2% | 23.2% | 0.0 |
-| Axe | 38.9% | 13.6% | 0.0 |
-| Spell Books | 36.3% | 12.6% | 0.0 |
-| Whip | 32.2% | 10.2% | 8.9 |
+|--------|-----------|----------|--------------|
+| Magic Wand | 51.7% | 35.7% | 0.0 |
+| Axe | 42.4% | 22.9% | 0.0 |
+| Spell Books | 33.9% | 20.4% | 0.0 |
+| Whip | 33.4% | 18.4% | 18.9 |
 
 ### Learned Behavior (from diagnosis tool)
 
@@ -178,7 +184,7 @@ The agent learned HP-dependent behavior:
 Run the game, select Agent mode (1), press F. Training runs headlessly at full speed with no rendering.
 
 Configuration in `game/config.py`:
-- `MAX_EPISODES = 100000` — total training episodes
+- `MAX_EPISODES = 100000` — total training episodes (set to 25,000 by default for quick runs; increase to 100,000 for full training)
 - `MAX_TICKS = 3840` — max ticks per episode
 - `AGENT_MOVE_EVERY = 3` — movement cooldown
 

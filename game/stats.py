@@ -7,11 +7,11 @@ class EpisodeStats:
         self.won          = False   # survived to MAX_TICKS
 
         # per weapon key -> damage dealt this episode
-        self.weapon_damage  = {}   # key -> total damage
-        self.weapon_level   = {}   # key -> final level at episode end
+        self.weapon_damage  = {}   #  total damage
+        self.weapon_level   = {}   #  final level at episode end
         self.weapon_present = set()
-        self.hp_saved       = {}   # key -> total HP saved this episode
-        self.hp_healed = {}   # key -> total HP healed this episode
+        self.hp_saved       = {}   #  total HP saved this episode
+        self.hp_healed = {}   #  total HP healed this episode
 
         # Diagnostics
         self.gems_collected   = 0
@@ -84,13 +84,13 @@ class RunTracker:
         self.boss_kills_total = 0
         self.max_player_level = 1
 
-        self._weapon_episodes    = {}   # key -> episodes appeared in
-        self._weapon_wins        = {}   # key -> wins when present
-        self._weapon_level_sum   = {}   # key -> sum of final levels
-        self._weapon_dps_sum     = {}   # key -> sum of dps values
-        self._weapon_dps_max     = {}   # key -> max dps ever seen
-        self._weapon_hp_saved_sum = {}  # key -> total HP saved across episodes
-        self._weapon_hp_healed_sum = {} # key -> total HP healed across episodes
+        self._weapon_episodes    = {}   #  episodes appeared in
+        self._weapon_wins        = {}   #  wins when present
+        self._weapon_level_sum   = {}   #  sum of final levels
+        self._weapon_dps_sum     = {}   #  sum of dps values
+        self._weapon_dps_max     = {}   #  max dps ever seen
+        self._weapon_hp_saved_sum = {}  #  total HP saved across episodes
+        self._weapon_hp_healed_sum = {} #  total HP healed across episodes
         self._player_level_sum   = 0
 
         # Diagnostic accumulators
@@ -109,8 +109,8 @@ class RunTracker:
         self._total_levelups      = 0
         self._choice_picks        = {}  # (kind, key) -> times picked
         self._choice_offered      = {}  # (kind, key) -> times offered
-        self._choice_weights_sum  = {}  # key -> sum of weights when offered
-        self._choice_weights_n    = {}  # key -> count of times offered
+        self._choice_weights_sum  = {}  #  sum of weights when offered
+        self._choice_weights_n    = {}  #  count of times offered
 
         self._current = None
 

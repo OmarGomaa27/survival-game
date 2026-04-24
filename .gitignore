@@ -13,17 +13,9 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Training outputs 
-reward_history.json
-run_stats.json
-results_screen.png
-training_results.csv
-
-# Profiling 
+# Profiling
 profile_training.py
 profile_results.txt
 
-# Diagnosis
-diagnosis.py
-lr_experiment.py
-lr_results.csv
+# Generated output
+results_screen.png

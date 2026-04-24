@@ -3,8 +3,6 @@ import matplotlib.pyplot as plt
 
 with open("reward_history.json") as f:
     rewards = json.load(f)
-
-# smooth with rolling average
 window = 50
 smoothed = [sum(rewards[max(0,i-window):i+1]) / 
             min(i+1, window) for i in range(len(rewards))]

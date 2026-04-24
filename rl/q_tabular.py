@@ -2,7 +2,7 @@ import random
 import math
 
 # Weapon key -> integer id for state encoding
-WEAPON_IDS = {"wand": 0, "axe": 1, "whip": 2, "books": 3, "shield": 4}
+WEAPON_IDS = {"wand": 0, "axe": 1, "whip": 2, "books": 3, "shield": 4} #The shield is included in the encoding for completeness but is disabled in gameplay and not considered during selection.
 
 
 class QLearningAgent:
@@ -124,14 +124,24 @@ class QLearningAgent:
         return (ex, ey, enemy_dist,
                 gx, gy, gem_dist,
                 wall_blocks_gem,
-                hp_b)           # State is a tuple of 9 elements, with directional info, distance buckets, wall awareness, and HP bucket.
-                                # ex, ey: direction to nearest enemy. Each is -1, 0, or 1. (3 × 3 = 9 combos)
+                hp_b)           # State is a tuple of 8 elements representing relative directions, distance buckets,
+                                # wall awareness, and health status.
+
+                                # ex, ey: direction to nearest enemy. Each is -1, 0, or 1. (3 × 3 = 9 combinations)
                                 # enemy_dist: 0=adjacent, 1=close, 2=medium, 3=far. (4 options)
-                                # gx, gy: direction to nearest gem. Each is -1, 0, or 1. (3 × 3 = 9 combos)
-                                # gem_dist: 0=near(<=3), 1=mid(4-6), 2=far(7+). (3 options)
-                                # wall_blocks_ge    m: 0=clear, 1=wall blocks gem-x, 2=blocks gem-y, 3=both. (4 options)
-                                # hp_b: 0=critical(<=25), 1=low(<=50), 2=ok. (3 options)
-                                # Total unique states: 9 (enemy dir) × 4 (enemy dist) × 9 (gem dir) × 3 (gem dist) × 4 (wall blocks) × 3 (HP bucket) = 3888 states
+
+                                # gx, gy: direction to nearest gem. Each is -1, 0, or 1. (3 × 3 = 9 combinations)
+                                # gem_dist: 0=near (<=3), 1=mid (4–6), 2=far (7+). (3 options)
+
+                                # wall_blocks_gem: 0=clear, 1=wall blocks gem-x, 2=blocks gem-y, 3=both. (4 options)
+
+                                # hp_b: 0=critical (<=25), 1=low (<=50), 2=ok. (3 options)
+
+                                # Total unique states:
+                                # 9 (enemy direction) × 4 (enemy distance) ×
+                                # 9 (gem direction) × 3 (gem distance) ×
+                                # 4 (wall awareness) × 3 (HP bucket)
+# = 11,664 states
 
 
 

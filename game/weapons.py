@@ -47,7 +47,7 @@ WEAPON_SCALING = {
         dict(damage=48,  range=5, cooldown=1, orbs=5),
         dict(damage=58,  range=5, cooldown=1, orbs=6),
     ],
-    # Shield scaling kept for reference  not in active pool
+    # Shield scaling kept for future work not in active weapon pool
     "shield": [
         dict(block_chance=0.50),
         dict(block_chance=0.55),
@@ -63,8 +63,7 @@ WEAPON_SCALING = {
 }
 
 # ── Base weapon definitions ────────────────────────────────────
-# Shield excluded: 0 DPS, block never triggers, wastes a weapon slot.
-# Can be re added once the agent is strong enough to evaluate it.
+# Shield excluded: 0 DPS, block never triggers, wastes a weapon slot as weapon is underpowered and doesn't fit current agent strategy. Can be re added once the environment and agent are expanded to support more defensive playstyles.
 WEAPON_POOL = {
     "wand": {
         "name":       "Magic Wand",

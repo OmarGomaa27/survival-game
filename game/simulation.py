@@ -194,7 +194,7 @@ def run_tick(agent, weapons, enemies, gems,
         danger_mult = 1.0 + 3.0 * (1.0 - hp_ratio)
         reward -= 2.0 * (hp_lost / 5.0) * danger_mult
 
-    # Proximity danger: penalize being near enemies when HP is low
+    # penalize being near enemies when HP is low
     if moved and enemies:
         nearest_enemy_dist = min(
             abs(e.x - agent.x) + abs(e.y - agent.y) for e in enemies)

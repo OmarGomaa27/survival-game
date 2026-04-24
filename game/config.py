@@ -3,7 +3,7 @@ import os
 TILE              = 24
 FPS               = 8
 FOG_RADIUS        = 3
-MAX_EPISODES      = 100000
+MAX_EPISODES      = 250000
 MAX_TICKS         = 3840
 AGENT_MOVE_EVERY  = 3
 BOSS_SPAWN_TICK   = 2880
