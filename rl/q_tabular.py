@@ -51,7 +51,7 @@ class QLearningAgent:
         """
         State with directional wall awareness and distance buckets.
 
-        Tuple (9 elements, ~3888 unique states):
+        Tuple (8 elements, ~11664 unique states):
           (ex, ey,              # direction to nearest enemy (-1/0/1)
            enemy_dist_bucket,   # 0=adjacent 1=close 2=medium 3=far/none
            gx, gy,              # direction to nearest gem (-1/0/1)
@@ -146,13 +146,11 @@ class QLearningAgent:
 
 
 class WeaponChoiceAgent:
-    """4
+    """
     Weapon selection agent that evaluates each choice INDEPENDENTLY.
     """
     # The movement agent acts every few ticks and gets immediate rewards. 
-    # The weapon agent acts maybe once or twice per episode and only learns the outcome when the episode ends. 
-    # It's a much harder learning problem — like evaluating whether a chess opening was good based on who won 50 moves later.
-
+    # The weapon agent acts maybe once or twice per episode and only learns the outcome at the end of the episode.
     def __init__(self, alpha=0.05, gamma=0.90,
                  epsilon=0.6, epsilon_decay=0.997, epsilon_min=0.10):   # alpha=learning rate, gamma=discount factor, 
                                                                         # epsilon=exploration rate, epsilon_decay=decay rate for exploration, 
